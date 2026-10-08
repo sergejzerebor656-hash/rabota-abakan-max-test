@@ -23,6 +23,13 @@
     <div class="row" id="ready">⏳ Проверяем сигнал готовности...</div>
     <div class="row" id="auth">⏳ Проверяем наличие данных входа...</div>
   </div>
+  <div class="info" id="railway-check">
+    <div class="row"><strong>Связь с Railway из MAX</strong></div>
+    <p class="note">Этот тест обращается только к публичному адресу /health. Данные входа MAX не передаются.</p>
+    <button id="railway-button" type="button" onclick="checkRailwayConnectivity()" style="padding:13px 16px;border:0;border-radius:10px;background:#087c43;color:white;font:inherit;font-weight:650;cursor:pointer">Проверить связь с Railway</button>
+    <div class="row" id="railway-result">ℹ️ Проверка ещё не запускалась.</div>
+    <div class="row" id="railway-cors"></div>
+  </div>
   <p class="note">Тест GH-2026-10-08. В обычном браузере отсутствие данных входа MAX ожидаемо. Коды авторизации не показываются, никуда не передаются и не сохраняются.</p>
 </main>
 <script>
@@ -53,6 +60,38 @@
   window.githubTestSdkFailed = function () {
     set("sdk", "❌ Не удалось загрузить библиотеку MAX Bridge");
     set("ready", "ℹ️ Сигнал готовности недоступен");
+  };
+  window.checkRailwayConnectivity = async function () {
+    var button = document.getElementById("railway-button");
+    var output = document.getElementById("railway-result");
+    var cors = document.getElementById("railway-cors");
+    button.disabled = true;
+    output.textContent = "⏳ Проверяем связь с Railway...";
+    cors.textContent = "";
+    var url = "https://telegram-ai-secretary-production.up.railway.app/health?gh_max_probe=" + Date.now();
+    async function probe(mode) {
+      var controller = new AbortController();
+      var timer = setTimeout(function () { controller.abort(); }, 9000);
+      try {
+        var response = await fetch(url + "&mode=" + mode, { mode:mode, credentials:"omit", cache:"no-store", signal:controller.signal });
+        return { ok:true, status:response.status, opaque:response.type==="opaque" };
+      } catch (e) {
+        return {ok:false,error:e && e.name==="AbortError"?"Время ожидания превышено":"Сетевой запрос заблокирован или недоступен"};
+      } finally { clearTimeout(timer); }
+    }
+    try {
+      var network = await probe("no-cors");
+      output.textContent = network.ok
+        ? "✅ Домен Railway отвечает на сетевой запрос (HTTP-статус скрыт режимом проверки)"
+        : "❌ Сетевая проверка Railway: " + network.error;
+      if (network.ok) {
+        cors.textContent = "⏳ Проверяем разрешение на API-запросы...";
+        var api = await probe("cors");
+        cors.textContent = api.ok
+          ? "✅ Междоменный API-запрос разрешён (HTTP " + api.status + ")"
+          : "⚠️ Обычный API-запрос не прошёл: возможно, требуется настройка CORS";
+      }
+    } finally { button.disabled = false; }
   };
   set("js", "✅ JavaScript работает");
   window.addEventListener("error", function (event) {
